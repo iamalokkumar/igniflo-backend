@@ -1,7 +1,8 @@
 const Order = require('../models/order.model');
+const Product = require('../models/product.model');
 const { lockInventory, unlockInventory } = require('../services/order.service');
-const Product = require('../models/product.model'); // import Product model
 
+// Create Order
 exports.create = async (req, res) => {
   const { customer, items, paymentReceived } = req.body;
 
@@ -9,12 +10,10 @@ exports.create = async (req, res) => {
     const resolvedItems = [];
 
     for (const item of items) {
-      // If item.product is already an ObjectId, skip lookup
       let productDoc;
       if (item.product.match(/^[0-9a-fA-F]{24}$/)) {
         productDoc = await Product.findById(item.product);
       } else {
-        // Assume it's a product name and look it up
         productDoc = await Product.findOne({ name: item.product });
       }
 
@@ -22,10 +21,7 @@ exports.create = async (req, res) => {
         return res.status(400).json({ error: `Product '${item.product}' not found.` });
       }
 
-      resolvedItems.push({
-        product: productDoc._id,
-        quantity: item.quantity,
-      });
+      resolvedItems.push({ product: productDoc._id, quantity: item.quantity });
     }
 
     await lockInventory(resolvedItems);
@@ -39,12 +35,12 @@ exports.create = async (req, res) => {
     global.io.emit('order-created', order);
     res.status(201).json(order);
   } catch (err) {
-    console.error('Error creating order:', err.message);
+    console.error('❌ Error creating order:', err.message);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
 
-// Get all orders with pagination
+// Get All Orders (with Pagination)
 exports.getAll = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -52,7 +48,6 @@ exports.getAll = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const total = await Order.countDocuments();
-
     const orders = await Order.find()
       .populate('customer')
       .populate('items.product')
@@ -62,12 +57,12 @@ exports.getAll = async (req, res) => {
 
     res.json({ total, page, limit, orders });
   } catch (err) {
-    console.error('Error fetching orders:', err.message);
+    console.error('❌ Error fetching orders:', err.message);
     res.status(500).json({ error: 'Failed to fetch orders' });
   }
 };
 
-// Update order status
+// Update Order Status
 exports.updateStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -76,21 +71,18 @@ exports.updateStatus = async (req, res) => {
     const order = await Order.findById(id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    // Unlock inventory if status becomes CANCELLED
     if (order.status !== 'CANCELLED' && status === 'CANCELLED') {
       await unlockInventory(order.items);
     }
 
     order.status = status;
     await order.save();
-   global.io.emit('order-created', order); // inside exports.create
 
-// After updating status
-global.io.emit('order-updated', order); 
+    global.io.emit('order-updated', order); // ✅ Emit updated status
 
     res.json(order);
   } catch (err) {
-    console.error('Error updating status:', err.message);
+    console.error('❌ Error updating status:', err.message);
     res.status(500).json({ error: 'Failed to update order status' });
   }
 };
