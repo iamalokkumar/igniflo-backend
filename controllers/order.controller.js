@@ -1,6 +1,16 @@
 const Order = require('../models/order.model');
 const Product = require('../models/product.model');
+const Customer = require('../models/customer.model');
 const { lockInventory, unlockInventory } = require('../services/order.service');
+
+// Create or find customer by email
+async function getOrCreateCustomer({ name, email, phone }) {
+  let customer = await Customer.findOne({ email });
+  if (!customer) {
+    customer = await Customer.create({ name, email, phone });
+  }
+  return customer;
+}
 
 // Create Order
 exports.create = async (req, res) => {
@@ -9,6 +19,7 @@ exports.create = async (req, res) => {
   try {
     const resolvedItems = [];
 
+    // Step 1: Match product name or ID
     for (const item of items) {
       let productDoc;
       if (item.product.match(/^[0-9a-fA-F]{24}$/)) {
@@ -24,15 +35,20 @@ exports.create = async (req, res) => {
       resolvedItems.push({ product: productDoc._id, quantity: item.quantity });
     }
 
+    // Step 2: Create or reuse customer by email
+    const customerDoc = await getOrCreateCustomer(customer);
+
+    // Step 3: Lock stock
     await lockInventory(resolvedItems);
 
+    // Step 4: Create order
     const order = await Order.create({
-      customer,
+      customer: customerDoc._id,
       items: resolvedItems,
       paymentReceived,
     });
 
-    global.io.emit('order-created', order);
+    global.io.emit('order-created', order); // WebSocket
     res.status(201).json(order);
   } catch (err) {
     console.error('❌ Error creating order:', err.message);
@@ -40,7 +56,7 @@ exports.create = async (req, res) => {
   }
 };
 
-// Get All Orders (with Pagination)
+// Get All Orders (Paginated)
 exports.getAll = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -78,8 +94,7 @@ exports.updateStatus = async (req, res) => {
     order.status = status;
     await order.save();
 
-    global.io.emit('order-updated', order); // ✅ Emit updated status
-
+    global.io.emit('order-updated', order);
     res.json(order);
   } catch (err) {
     console.error('❌ Error updating status:', err.message);
