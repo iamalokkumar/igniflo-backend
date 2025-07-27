@@ -3,20 +3,32 @@ const { lockInventory, unlockInventory } = require('../services/order.service');
 
 // Create a new order
 exports.create = async (req, res) => {
+  const { customer, items, paymentReceived } = req.body;
+
   try {
-    const { customer, items, paymentReceived, orderName } = req.body;
+    // Convert product names to ObjectIds
+    const resolvedItems = [];
 
-    await lockInventory(items);
+    for (const item of items) {
+      const productDoc = await Product.findOne({ name: item.product });
+      if (!productDoc) {
+        return res.status(400).json({ error: `Product '${item.product}' not found.` });
+      }
 
-    const order = await Order.create({ customer, items, paymentReceived, orderName });
+      resolvedItems.push({
+        product: productDoc._id,
+        quantity: item.quantity,
+      });
+    }
 
-    // Emit "order-created" to all WebSocket clients
+    await lockInventory(resolvedItems);
+
+    const order = await Order.create({ customer, items: resolvedItems, paymentReceived });
     global.io.emit('order-created', order);
-
     res.status(201).json(order);
-  } catch (err) {
-    console.error('Error creating order:', err.message);
-    res.status(500).json({ error: 'Failed to create order' });
+  } catch (error) {
+    console.error('❌ Order creation failed:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 };
 
