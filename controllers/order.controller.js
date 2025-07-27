@@ -45,26 +45,28 @@ exports.getAll = async (req, res) => {
 
 // Update order status
 exports.updateStatus = async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
-
   try {
+    const { id } = req.params;
+    const { status } = req.body;
+
     const order = await Order.findById(id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    // Optional: Check for valid status
-    const validStatuses = ['Placed', 'Picked', 'Shipped', 'Delivered'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ error: 'Invalid status value' });
+    // Unlock inventory if status becomes CANCELLED
+    if (order.status !== 'CANCELLED' && status === 'CANCELLED') {
+      await unlockInventory(order.items);
     }
 
     order.status = status;
     await order.save();
+   global.io.emit('order-created', order); // inside exports.create
 
-    global.io.emit('order-updated', order);
+// After updating status
+global.io.emit('order-updated', order); 
+
     res.json(order);
   } catch (err) {
-    console.error('❌ Error updating order status:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Error updating status:', err.message);
+    res.status(500).json({ error: 'Failed to update order status' });
   }
 };
