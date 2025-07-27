@@ -14,35 +14,46 @@ async function getOrCreateCustomer({ name, email, phone }) {
 
 // Create Order
 exports.create = async (req, res) => {
-  const { customer, items, paymentReceived } = req.body;
+  const { customer: customerData, items, paymentReceived } = req.body;
 
   try {
+    if (!customerData || !customerData.email || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Customer and items are required' });
+    }
+
+    // 👤 Ensure customer exists or create
+    const customer = await getOrCreateCustomer(customerData);
+
     const resolvedItems = [];
 
     for (const item of items) {
       let productDoc;
+
       if (item.product.match(/^[0-9a-fA-F]{24}$/)) {
         productDoc = await Product.findById(item.product);
       } else {
         productDoc = await Product.findOne({ name: item.product });
 
-        // Auto-create if not found
+        // ✅ Auto-create product if not found
         if (!productDoc) {
           productDoc = await Product.create({
             name: item.product,
-            stock: 100,
-            price: 100,
+            stock: 100, // default stock
+            price: 100, // default price
           });
         }
       }
 
-      resolvedItems.push({ product: productDoc._id, quantity: item.quantity });
+      resolvedItems.push({
+        product: productDoc._id,
+        quantity: item.quantity,
+      });
     }
 
     await lockInventory(resolvedItems);
 
     const order = await Order.create({
-      customer,
+      customer: customer._id,
       items: resolvedItems,
       paymentReceived,
     });
@@ -54,7 +65,6 @@ exports.create = async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
-
 
 // Get All Orders (Paginated)
 exports.getAll = async (req, res) => {
