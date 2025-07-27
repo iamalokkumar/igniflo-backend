@@ -100,12 +100,26 @@ exports.updateStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const order = await Order.findById(id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const allowedStatuses = ['PENDING', 'PAID', 'FULFILLED', 'CANCELLED'];
 
-    // Unlock inventory if order is cancelled
+    if (!status || !allowedStatuses.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Must be one of: ${allowedStatuses.join(', ')}` });
+    }
+
+    const order = await Order.findById(id);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    console.log('🟡 Current:', order.status, '➡️ New:', status);
+
+    // Unlock inventory if status goes to CANCELLED
     if (order.status !== 'CANCELLED' && status === 'CANCELLED') {
-      await unlockInventory(order.items);
+      try {
+        await unlockInventory(order.items);
+      } catch (invErr) {
+        console.error('❌ Inventory unlock error:', invErr);
+      }
     }
 
     order.status = status;
@@ -114,7 +128,7 @@ exports.updateStatus = async (req, res) => {
     global.io.emit('order-updated', order);
     res.json(order);
   } catch (err) {
-    console.error('❌ Error updating status:', err.message);
+    console.error('❌ Error updating order status:', err.stack || err);
     res.status(500).json({ error: 'Failed to update order status' });
   }
 };
