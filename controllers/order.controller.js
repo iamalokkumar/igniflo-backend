@@ -19,42 +19,42 @@ exports.create = async (req, res) => {
   try {
     const resolvedItems = [];
 
-    // Step 1: Match product name or ID
     for (const item of items) {
       let productDoc;
       if (item.product.match(/^[0-9a-fA-F]{24}$/)) {
         productDoc = await Product.findById(item.product);
       } else {
         productDoc = await Product.findOne({ name: item.product });
-      }
 
-      if (!productDoc) {
-        return res.status(400).json({ error: `Product '${item.product}' not found.` });
+        // Auto-create if not found
+        if (!productDoc) {
+          productDoc = await Product.create({
+            name: item.product,
+            stock: 100,
+            price: 100,
+          });
+        }
       }
 
       resolvedItems.push({ product: productDoc._id, quantity: item.quantity });
     }
 
-    // Step 2: Create or reuse customer by email
-    const customerDoc = await getOrCreateCustomer(customer);
-
-    // Step 3: Lock stock
     await lockInventory(resolvedItems);
 
-    // Step 4: Create order
     const order = await Order.create({
-      customer: customerDoc._id,
+      customer,
       items: resolvedItems,
       paymentReceived,
     });
 
-    global.io.emit('order-created', order); // WebSocket
+    global.io.emit('order-created', order);
     res.status(201).json(order);
   } catch (err) {
     console.error('❌ Error creating order:', err.message);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
+
 
 // Get All Orders (Paginated)
 exports.getAll = async (req, res) => {
