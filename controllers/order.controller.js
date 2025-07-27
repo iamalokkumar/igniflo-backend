@@ -1,16 +1,23 @@
 const Order = require('../models/order.model');
 const { lockInventory, unlockInventory } = require('../services/order.service');
+const Product = require('../models/product.model'); // import Product model
 
-// Create a new order
 exports.create = async (req, res) => {
   const { customer, items, paymentReceived } = req.body;
 
   try {
-    // Convert product names to ObjectIds
     const resolvedItems = [];
 
     for (const item of items) {
-      const productDoc = await Product.findOne({ name: item.product });
+      // If item.product is already an ObjectId, skip lookup
+      let productDoc;
+      if (item.product.match(/^[0-9a-fA-F]{24}$/)) {
+        productDoc = await Product.findById(item.product);
+      } else {
+        // Assume it's a product name and look it up
+        productDoc = await Product.findOne({ name: item.product });
+      }
+
       if (!productDoc) {
         return res.status(400).json({ error: `Product '${item.product}' not found.` });
       }
@@ -23,11 +30,16 @@ exports.create = async (req, res) => {
 
     await lockInventory(resolvedItems);
 
-    const order = await Order.create({ customer, items: resolvedItems, paymentReceived });
+    const order = await Order.create({
+      customer,
+      items: resolvedItems,
+      paymentReceived,
+    });
+
     global.io.emit('order-created', order);
     res.status(201).json(order);
-  } catch (error) {
-    console.error('❌ Order creation failed:', error);
+  } catch (err) {
+    console.error('Error creating order:', err.message);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
