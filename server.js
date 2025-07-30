@@ -1,9 +1,13 @@
 const http = require('http');
 const app = require('./app');
+const cors = require("cors");
 const mongoose = require('mongoose');
 const { Server } = require('socket.io');
 require('dotenv').config();
-
+app.use(cors({
+  origin: process.env.CLIENT_URL,
+  credentials: true
+}));
 // ✅ Health Check Route
 app.get('/healthz', (_, res) => res.send('OK'));
 
