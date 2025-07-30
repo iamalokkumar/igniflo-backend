@@ -1,34 +1,39 @@
 const http = require('http');
-const app = require('./app');
-const cors = require("cors");
+const express = require('express');
+const cors = require('cors');
 const mongoose = require('mongoose');
 const { Server } = require('socket.io');
 require('dotenv').config();
+
+const app = express();
+const server = http.createServer(app);
+
+// ✅ CORS for Express
 app.use(cors({
-  origin: process.env.CLIENT_URL,
+  origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true
 }));
+
+app.use(express.json());
+
 // ✅ Health Check Route
 app.get('/healthz', (_, res) => res.send('OK'));
 
-// Create HTTP Server
-const server = http.createServer(app);
-
-// Configure Socket.io
+// ✅ Socket.IO setup with CORS
 const io = new Server(server, {
   cors: {
-    origin: [process.env.CLIENT_URL, 'http://localhost:3000'],
+    origin: process.env.CLIENT_URL || 'http://localhost:3000',
     methods: ['GET', 'POST', 'PUT'],
     credentials: true,
-  },
+  }
 });
 
-// WebSocket Setup
+// ✅ Import socket logic
 require('./sockets/order.socket')(io);
 
+// ✅ Connect MongoDB & start server
 const PORT = process.env.PORT || 8080;
 
-// Connect to MongoDB and start server
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
